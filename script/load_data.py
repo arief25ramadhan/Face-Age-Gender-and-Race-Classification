@@ -1,17 +1,28 @@
+# 1. Import library
 import cv2
 import random
 import numpy as np
 import matplotlib.pyplot as plt
 from PIL import Image
-from torch.utils.data import Dataset
+import torch
+from torch.utils.data import Dataset, DataLoader, random_split
 from torchvision import transforms
 import glob
 import os
 
-# Just in case your images don't load properly
+## Just in case your images don't load properly
 from PIL import ImageFile
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
+# # 2. Download data
+# !wget https://hydranets-data.s3.eu-west-3.amazonaws.com/UTKFace.zip
+# !jar xf UTKFace.zip
+
+# 2.1. Set image paths
+image_paths = sorted(glob.glob("../UTKFace/*.jpg.chip.jpg"))
+# print("Try one image path: ", image_paths[0])
+
+# 3. Dataset class
 class UTKFace(Dataset):
     def __init__(self, image_paths):
         # Mean and Std for ImageNet
@@ -29,7 +40,7 @@ class UTKFace(Dataset):
         self.races = []
 
         for path in image_paths:
-            filename = path[8:].split("_")
+            filename = os.path.basename(path).split("_")
             if len(filename)==4:
                 self.images.append(path)
                 self.ages.append(int(filename[0]))
@@ -55,33 +66,45 @@ class UTKFace(Dataset):
         return sample
 
 
-import torch
-from torch.utils.data import random_split
-from torch.utils.data import DataLoader
+# 4. Load data function
+def load_data(image_paths=image_paths):
 
-# define the train and val splits
-TRAIN_SPLIT = 0.7
-VAL_SPLIT = 0.3
+    TRAIN_SPLIT = 0.6
+    VAL_SPLIT = 0.2
+    TEST_SPLIT = 0.2
 
-# set the device we will be using to train the model
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    num_train = round(TRAIN_SPLIT*len(image_paths))
+    num_val = round(VAL_SPLIT*len(image_paths))
+    num_test = len(image_paths) - num_train - num_val
 
-num_train = round(TRAIN_SPLIT*len(image_paths))
-num_val = round(VAL_SPLIT*len(image_paths))
+    print("Length of all data: ", len(image_paths))
+    print("Length of train data: ", num_train)
+    print("Length of val data: ", num_val)
+    print("Length of test data: ", num_test)
 
-print('No of train samples', num_train)
-print('No of validation Samples', num_val)
+    (train_dataset, val_dataset, test_dataset) = random_split(image_paths,[num_train, num_val, num_test],generator=torch.Generator().manual_seed(42))
 
-(train_dataset, valid_dataset) = random_split(image_paths,[num_train, num_val],generator=torch.Generator().manual_seed(42))
+    # Data Loader
+    BATCH_SIZE = 64
 
-"""## Dataloader"""
+    train_dataloader = DataLoader(UTKFace(train_dataset), shuffle=True, batch_size=BATCH_SIZE)
+    val_dataloader = DataLoader(UTKFace(val_dataset), shuffle=False, batch_size=BATCH_SIZE)
+    test_dataloader = DataLoader(UTKFace(test_dataset), shuffle=False, batch_size=BATCH_SIZE)
 
-BATCH_SIZE = 64
+    return train_dataloader, val_dataloader, test_dataloader
 
-train_dataloader = DataLoader(UTKFace(train_dataset), shuffle=True, batch_size=BATCH_SIZE)
-val_dataloader = DataLoader(UTKFace(valid_dataset), shuffle=False, batch_size=BATCH_SIZE)
+train_dataloader, val_dataloader, test_dataloader = load_data(image_paths=image_paths)
 
-train_steps = len(train_dataloader.dataset) // BATCH_SIZE
-val_steps = len(val_dataloader.dataset) // BATCH_SIZE
+# 5. Try
+dataset_dict = {
+    'race_id': {0: 'White', 1: 'Black', 2: 'Asian', 3: 'Indian', 4: 'Other'
+    },
+    'gender_id': { 0: 'Male', 1: 'Female'
+    }
+}
 
-sample = next(iter(train_dataloader))
+# sample = next(iter(train_dataloader))
+# print(sample["image"][0].shape)
+# print(sample["age"][0].item())
+# print(dataset_dict['gender_id'][sample["gender"][0].item()])
+# print(dataset_dict['race_id'][sample["race"][0].item()])
